@@ -1,0 +1,59 @@
+MASTER_NODE_NAME = 'ftonitaS'
+MASTER_NODE_IP = '192.168.42.110'
+MASTER_SCRIPT = "scripts/master_setup.sh"
+
+WORKER_NODE_NAME = 'ftonitaSW'
+WORKER_NODE_IP = '192.168.42.111'
+WORKER_SCRIPT = "scripts/worker_setup.sh"
+
+CPU = 1
+MEM = 1024
+BOX = "../centos_image"
+BOX_AUTO_UPDATE = false
+
+# отключаем фаерволл для прямого доступа к машине по ssh (небезопасно)
+$DISABLE_FIREWALL_SCRIPT = <<-SHELL
+  sudo systemctl disable --now firewalld
+SHELL
+
+Vagrant.configure("2") do |config|
+	config.vm.box = BOX
+	config.vm.box_check_update = BOX_AUTO_UPDATE
+	config.vm.provision "shell", inline: $DISABLE_FIREWALL_SCRIPT
+  
+	# установка vagrant vbguest плагина в случае его отсутствия
+	 if Vagrant.has_plugin?("vagrant-vbguest")
+	 	config.vbguest.installer_options = { allow_kernel_upgrade: true }
+	 	config.vbguest.auto_update = false
+	 end
+
+	config.vm.provider "virtualbox" do |v|
+		v.name = "IoT"
+		v.memory = MEM
+		v.cpus = CPU
+		v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+		v.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+	end
+
+	config.vm.define MASTER_NODE_NAME do |master|
+		master.vm.hostname = MASTER_NODE_NAME
+		master.vm.network :private_network, ip: MASTER_NODE_IP
+		master.vm.synced_folder ".", "/vagrant", type: "virtualbox"
+		master.vm.provision "shell", privileged: true, path: MASTER_SCRIPT, args: [MASTER_NODE_IP]
+
+		master.vm.provider "virtualbox" do |v|
+			v.name = MASTER_NODE_NAME
+		end
+	end
+
+	config.vm.define WORKER_NODE_NAME do |worker|
+		worker.vm.hostname = WORKER_NODE_NAME
+		worker.vm.network :private_network, ip: WORKER_NODE_IP 
+		worker.vm.synced_folder ".", "/vagrant", type: "virtualbox"
+		worker.vm.provision "shell", privileged: true, path: WORKER_SCRIPT, args: [MASTER_NODE_IP, WORKER_NODE_IP]
+
+		worker.vm.provider "virtualbox" do |v|
+			v.name = WORKER_NODE_NAME
+		end
+	end
+end
